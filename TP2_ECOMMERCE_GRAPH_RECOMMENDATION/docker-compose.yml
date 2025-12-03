@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: td2_postgres
+    environment:
+      POSTGRES_DB: shop
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./postegre/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - td2net
+
+  neo4j:
+    image: neo4j:5
+    container_name: td2_neo4j
+    environment:
+      NEO4J_AUTH: neo4j/neo4j1234
+    ports:
+      - "7474:7474"   # Browser
+      - "7687:7687"   # Bolt
+    networks:
+      - td2net
+
+  app:
+    image: python:3.11-slim
+    container_name: td2_app
+    working_dir: /app
+    volumes:
+      - ./app:/app
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: shop
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      NEO4J_URL: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: neo4j1234
+    # Use array form to avoid shell quoting issues
+    command: ["sh","-lc","pip install --no-cache-dir -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - neo4j
+    networks:
+      - td2net
+
+  checks:
+    image: python:3.11-slim
+    working_dir: /work
+    volumes:
+      - ./scripts:/work/scripts
+      - ./app:/app
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: shop
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      NEO4J_URL: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: neo4j1234
+    command: >
+      sh -lc "apt-get update &&
+              apt-get install -y curl postgresql-client &&
+              pip install --no-cache-dir -r /app/requirements.txt &&
+              bash /work/scripts/check_containers.sh"
+    depends_on:
+      - app
+      - postgres
+      - neo4j
+    networks:
+      - td2net
+networks:
+  td2net:
+    driver: bridge
